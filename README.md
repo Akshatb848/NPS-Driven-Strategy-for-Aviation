@@ -1,159 +1,146 @@
 # NPS-Driven Strategy for Aviation
 
-Analysis of airline post-flight survey data to find which service touchpoints drive Net Promoter Score (NPS). A single Jupyter notebook builds regression models (Linear Regression, Ridge, Lasso, Random Forest, Gradient Boosting, XGBoost) that predict a passenger's NPS outcome from their ratings of individual touchpoints (booking, check-in, boarding, on-board, arrival, crew, announcements and so on), then uses feature importance and SHAP values to rank those touchpoints. On a held-out 20% test split of 73,398 survey responses, the tuned Random Forest reaches R² = 0.718; gradient-boosted models reach R² = 0.725.
+**Which airline service touchpoints actually move Net Promoter Score? Gradient-boosted and Random Forest models trained on 73,398 post-flight survey responses (test R² 0.718–0.725), with SHAP used to rank the journey stages.**
 
-## Business problem
+[![CI](https://github.com/Akshatb848/NPS-Driven-Strategy-for-Aviation/actions/workflows/ci.yml/badge.svg)](https://github.com/Akshatb848/NPS-Driven-Strategy-for-Aviation/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
+![Explainability: SHAP](https://img.shields.io/badge/explainability-SHAP-purple.svg)
 
-NPS sorts customers into Promoters, Passives and Detractors, but the headline score does not say what to fix. An airline collects ratings for many separate touchpoints. The question here is which of those touchpoints actually move a passenger's NPS outcome, so that improvement spend can target the stages of the journey that matter most.
+## Results at a glance
 
-## Dataset
-
-The data is **not included in this repository** and is not publicly available. The notebook was run in Google Colab against two CSV files that were removed from the repo (see the "Delete Dataset" commit):
-
-| File (path in notebook) | Used in | Size reported in notebook |
-|---|---|---|
-| `/content/NPS.csv` | Cells 1-4 (baseline models) | Row count not printed |
-| `/content/drive/MyDrive/Feb 71LakhRecordsNPS4CorelationV1.csv` | Cell 5 (main pipeline) | 73,398 rows x 85 columns |
-
-Both are exports of an airline's passenger survey records, with Salesforce-style column names (`*__c`). The main file contains:
-
-- About 35 touchpoint ratings on a 1-5 scale, for example `On_board_experience__c`, `Boarding_experience__c`, `Arrival_experience__c`, `Check_in_experience__c` and `Crew_helpfulness__c`. Many have missing values (for example `Snacks_and_beverage_if_experienced__c` has 24,725 non-null values).
-- The NPS category columns `Promotors__c`, `Passive__c` and `Detractors__c`, plus `NPS_Type__c`.
-- Booking and flight metadata (route, delay, equipment, seat, booking source) and passenger attributes (gender, date of birth, age).
-
-Because the data includes personal passenger information, it should not be committed to a public repository. To rerun the notebook you need your own export with the same column names.
-
-**NPS definition used.** In the main pipeline, NPS is computed for each row as:
-
-```
-NPS_Score = (Promotors__c - Detractors__c) / (Promotors__c + Passive__c + Detractors__c) * 100
-```
-
-In `NPS.csv`, `Promotors__c` is a 0/1 flag for each respondent (see the "Actual_NPS" column in the printed prediction table). With per-respondent flags, this formula gives +100 for a Promoter, 0 for a Passive and -100 for a Detractor. It is not an aggregate NPS over a group of passengers.
-
-## Approach
-
-**Baseline (notebook cells 1-4, `NPS.csv`)**
-- Uses 16 touchpoint ratings as features. Rows with any missing value are dropped.
-- The target is the binary `Promotors__c` flag, modelled as a regression problem.
-- Uses an 80/20 train/test split (`random_state=42`) and fits a Linear Regression and an XGBoost regressor (100 trees, depth 5, learning rate 0.1).
-- Also includes a correlation heatmap and an XGBoost feature-importance plot. Cell 4 writes test-set predictions to `NPS_Predictions.csv`, which is not in the repo.
-
-**Main pipeline (notebook cell 5, 73,398-row export)**
-1. Drops columns that are more than 50% missing and fills the remaining numeric gaps with the median. Categorical columns are label-encoded.
-2. Computes `NPS_Score` with the formula above.
-3. Selects features in three steps: keep features with |correlation with `NPS_Score`| > 0.2, then drop features with VIF >= 5, then use Recursive Feature Elimination with a 50-tree Random Forest to keep 10 features.
-4. Splits the data 80/20 (`random_state=42`) and applies `StandardScaler` (fit on the training split).
-5. Tunes a Random Forest with `RandomizedSearchCV` (10 candidates, 5-fold CV).
-6. Compares five models on the test split and with 5-fold CV R² on the training split.
-7. Computes impurity-based feature importances and a SHAP summary (`TreeExplainer`) for the Random Forest.
-8. Saves the tuned Random Forest and the scaler with `joblib`.
-
-## Results
-
-All numbers are copied from the executed outputs in the notebook.
-
-**Main pipeline: target `NPS_Score`, test split = 20% of 73,398 rows**
+**Main pipeline.** The target is a per-respondent `NPS_Score` (+100 / 0 / −100). The test split is 20% of 73,398 rows.
 
 | Model | Test R² | 5-fold CV mean R² (train split) |
 |---|---|---|
-| XGBoost | 0.7251 | 0.7271 |
+| XGBoost | **0.7251** | 0.7271 |
 | Gradient Boosting | 0.7250 | 0.7271 |
-| Random Forest (tuned, saved) | 0.7179 | 0.7225 |
+| Random Forest (tuned, saved in `best_rf_model.zip`) | 0.7179 | 0.7225 |
 | Ridge Regression | 0.6337 | 0.6399 |
 | Lasso Regression | 0.6337 | 0.6399 |
 
-The notebook reports R² only for these models. MAE and RMSE are imported but not printed. The saved model is the Random Forest, even though the boosted models score slightly higher.
+**Baseline.** The target is the binary `Promotors__c` flag from a separate `NPS.csv` export: XGBoost R² 0.6276 (RMSE 0.2832), Linear Regression R² 0.5297 (RMSE 0.3183).
 
-**Baseline: target binary `Promotors__c`, test split = 20% of `NPS.csv`**
+All numbers come from the saved outputs of `NPS (1).ipynb`, and CI re-checks them against the notebook on every push.
 
-| Model | Test R² | Test RMSE |
-|---|---|---|
-| XGBoost | 0.6276 | 0.2832 |
-| Linear Regression | 0.5297 | 0.3183 |
+<p align="center">
+  <img src="docs/images/shap_summary.png" alt="SHAP summary plot: low on-board, arrival and boarding ratings push predicted NPS down sharply" width="52%">
+  <img src="docs/images/rf_feature_importance.png" alt="Random Forest feature importance: on-board experience highest, then arrival and boarding" width="46%">
+</p>
 
-**Which touchpoints matter.** RFE kept these 10 features. They are listed in the order of the Random Forest's impurity-based importance plot:
+*Left: SHAP summary for the tuned Random Forest. Right: its impurity-based feature importances. Both figures are taken unchanged from the notebook outputs.*
 
-1. `On_board_experience__c`
-2. `Arrival_experience__c`
-3. `Boarding_experience__c`
-4. `Pre_travel_information_experience__c`
-5. `Check_in_experience__c`
-6. `Crew_helpfulness__c`
-7. `Staff_efficiency_at_the_counter__c`
-8. `Query_handling_Contact_center_Dottie__c`
-9. `Did_you_receive_your_bag_within_25_min_o__c`
-10. `Clarity_of_announcements__c`
+**What the outputs say:**
+- **The core flight stages drive NPS.** On-board, arrival and boarding experience carry most of the model's importance. On-board experience is also the top feature in the separate XGBoost baseline.
+- **Bad experiences hurt more than good ones help.** Low on-board, arrival or boarding ratings can pull a prediction down by 100 points or more. High ratings add at most a few tens of points. Fixing poor experiences at these stages is likely to move NPS more than polishing stages that already score well.
+- **Some touchpoints add little.** Announcement clarity, the baggage-within-25-minutes flag and contact-centre query handling contribute little once the main stages are known.
 
-**Business takeaways, as supported by the outputs:**
-- **The core flight stages drive NPS.** On-board, arrival and boarding experience together account for most of the Random Forest's importance. On-board experience is also the clear top feature in the separate XGBoost baseline on `NPS.csv`.
-- **Bad experiences hurt more than good ones help.** In the SHAP summary plot, low ratings on on-board, arrival and boarding experience push predictions down sharply (close to -100 at the extreme for on-board experience). High ratings add a much smaller positive amount. Fixing poor experiences at these stages is therefore likely to do more for NPS than further polishing stages that already score well.
-- **Some touchpoints add little.** Announcement clarity, baggage delivery time and contact-centre query handling contribute little once the main journey stages are known.
+## Business problem
 
-The baseline correlation cell reports that `Detractors__c` is the factor most negatively correlated with `Promotors__c` (r = -0.7248). This is expected by construction, because the two are mutually exclusive NPS categories. It is not a service insight.
+NPS sorts passengers into Promoters, Passives and Detractors, but the headline number does not say what to fix. The survey export used here holds ratings for 33 separate touchpoints across the journey. This project asks which touchpoints actually move a passenger's NPS outcome, so that improvement budgets go to the journey stages that matter most.
 
-## Limitations
+## Data
 
-- **The data is not available.** The notebook cannot be rerun without a private export that uses the same schema.
-- **Hyperparameter search was mostly broken.** The search grid includes `max_features='auto'`, which scikit-learn 1.3+ rejects. 35 of the 50 CV fits failed, so only 3 of the 10 sampled candidates were actually evaluated.
-- **Preprocessing ran before the split.** Median imputation, label encoding and all three feature-selection steps (correlation filter, VIF, RFE) were run on the full dataset before the train/test split. This leaks a little information from the test set, so the test scores may be slightly optimistic. The scaler was correctly fit on the training split only.
-- **The target is treated as continuous.** For each respondent the target only takes three values (or two in the baseline), but it is modelled with regression. A classification model (Promoter / Passive / Detractor) with accuracy, F1 and a confusion matrix would be a more natural framing. Class balance is not reported.
-- **Importances show association, not cause.** Impurity-based importances and SHAP values describe what the model relies on. Touchpoint ratings are also correlated with one another.
-- **Use the saved model with care.** The 10 input features must be passed in the column order used during training, and the notebook does not print that order (the importance plot is sorted by importance, not by column order). The model also predicts a per-respondent score, not an aggregate NPS.
-- **Environment-specific code.** The notebook uses Colab paths (`/content/...`, Google Drive) and the Jupyter `display()` function. The baseline code appears in three near-identical cells.
+| | |
+|---|---|
+| Source | Private airline post-flight survey exports (Salesforce-style `*__c` columns) |
+| Main file | 73,398 rows × 85 columns: 33 touchpoint rating columns on a 1–5 scale, NPS category flags, booking and flight metadata, passenger attributes |
+| Baseline file | `NPS.csv`, a smaller export with 16 touchpoint ratings (row count not printed) |
+| Licence and availability | **Not public and not included.** It contains personal passenger data (for example gender and date of birth), so it is not committed to this repository. Rerunning needs your own export with the same column names. The notebook's saved outputs show aggregates (`df.info()`, `describe()`, model scores, plots) plus ten rows of anonymous 1–5 ratings and predictions from the baseline test split. They contain no names, booking references or contact details. |
 
-## How to run
+**How NPS is defined here.** For each row, `NPS_Score = (Promotors__c − Detractors__c) / (Promotors__c + Passive__c + Detractors__c) × 100`. With per-respondent 0/1 flags this gives +100 for a Promoter, 0 for a Passive and −100 for a Detractor. It is a per-passenger score, not an aggregate NPS.
 
-The executed outputs come from Google Colab running Python 3.11. Python 3.11 is recommended.
+## Approach
+
+```mermaid
+flowchart LR
+    A[Survey export<br/>73,398 x 85] --> B[Drop cols >50% missing<br/>median impute, label-encode]
+    B --> C[NPS_Score per respondent]
+    C --> D[Feature selection:<br/>abs corr > 0.2 -> VIF < 5 -> RFE top 10]
+    D --> E[80/20 split, rs=42<br/>StandardScaler on train]
+    E --> F[RF RandomizedSearchCV<br/>+ GB, XGBoost, Ridge, Lasso]
+    F --> G[Test R² + 5-fold CV R²]
+    F --> H[Feature importance + SHAP]
+    F --> I[joblib: best_rf_model.pkl + scaler.pkl]
+```
+
+Recursive feature elimination (RFE) kept 10 touchpoints. In Random Forest importance order they are: on-board experience, arrival experience, boarding experience, pre-travel information, check-in experience, crew helpfulness, staff efficiency at the counter, contact-centre query handling, bag received within 25 minutes, and clarity of announcements.
+
+<details>
+<summary>Baseline: XGBoost feature importance on NPS.csv</summary>
+
+<img src="docs/images/xgb_baseline_feature_importance.png" alt="XGBoost baseline feature importance: on-board experience dominates" width="70%">
+</details>
+
+## Reproduce
+
+The notebook ran on Google Colab with Python 3.11. Python 3.11 is recommended, and CI installs `requirements.txt` on 3.11.
 
 ```bash
 git clone https://github.com/Akshatb848/NPS-Driven-Strategy-for-Aviation.git
 cd NPS-Driven-Strategy-for-Aviation
-
-python3.11 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+python3.11 -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-
 jupyter notebook "NPS (1).ipynb"
 ```
 
-Before you run the notebook, change `file_path` in cells 1-5 to point to your local copies of the CSV files. To make the Random Forest search work on current scikit-learn, change `'auto'` to `None` (or `1.0`) in `param_grid['max_features']`.
+1. Point `file_path` in cells 1–5 at your local CSV exports. The notebook currently uses Colab paths (`/content/...` and Google Drive).
+2. Cells 1–4 are the `NPS.csv` baseline. Cell 5 is the main pipeline.
+3. On scikit-learn 1.3 or later, change `'auto'` to `None` (or `1.0`) in `param_grid['max_features']`, or most of the search fits will fail (see Limitations).
 
-### Loading the saved model
-
-`best_rf_model.zip` holds two `joblib` pickles:
-
-| File | Contents |
-|---|---|
-| `best_rf_model.pkl` (about 49 MB uncompressed) | The tuned `RandomForestRegressor`: 100 trees, `max_depth=30`, `min_samples_split=10`, `min_samples_leaf=4`, `max_features='sqrt'`, `bootstrap=False`, 10 input features, trained on 58,718 rows |
-| `scaler.pkl` | The `StandardScaler` fit on the training split (10 features) |
-
-Both were pickled with scikit-learn 1.6.1. Install that version to load them without version-mismatch warnings. Only unpickle files from sources you trust.
+Smoke checks (no data needed). These are the same checks CI runs:
 
 ```bash
-pip install "scikit-learn==1.6.1"
-unzip best_rf_model.zip
+pip install pytest nbformat
+pytest -q tests
 ```
+
+### Using the saved model
+
+`best_rf_model.zip` contains `best_rf_model.pkl`, the tuned `RandomForestRegressor` (100 trees, `max_depth=30`, `min_samples_split=10`, `min_samples_leaf=4`, `max_features='sqrt'`, `bootstrap=False`, 10 inputs, about 49 MB unzipped), and `scaler.pkl`, the `StandardScaler`. Both were pickled with scikit-learn 1.6.1, which `requirements.txt` pins, and CI loads them on every push. Only unpickle files from sources you trust.
 
 ```python
 import joblib
-import numpy as np
-
-model = joblib.load("best_rf_model.pkl")
-scaler = joblib.load("scaler.pkl")
-
-# X_raw: shape (n_samples, 10). Columns must be the 10 RFE-selected touchpoint
-# ratings, in the same order as `selected_feature_names` in the notebook.
-X_raw = np.array([[...]])
-nps_score_pred = model.predict(scaler.transform(X_raw))   # roughly -100 to 100
+model, scaler = joblib.load("best_rf_model.pkl"), joblib.load("scaler.pkl")
+# X_raw: (n, 10) touchpoint ratings in the same column order as `selected_feature_names` in the notebook
+nps_pred = model.predict(scaler.transform(X_raw))   # per-respondent score, roughly -100..100
 ```
 
-## Project structure
+## Repository structure
 
 ```
 .
-├── NPS (1).ipynb        # Full analysis: baselines, main pipeline, model comparison, SHAP
-├── best_rf_model.zip    # best_rf_model.pkl (tuned Random Forest) + scaler.pkl (StandardScaler)
-├── requirements.txt     # Python dependencies for the notebook
-└── README.md
+├── NPS (1).ipynb             # baselines, main pipeline, model comparison, SHAP (with saved outputs)
+├── best_rf_model.zip         # tuned Random Forest + StandardScaler (joblib)
+├── docs/images/              # figures extracted from the notebook outputs
+├── tests/test_notebooks.py   # CI smoke checks: nbformat validity + README numbers match notebook outputs
+├── tests/test_saved_model.py # CI: the zipped model + scaler load, match the documented config, and predict
+├── requirements.txt
+├── .github/workflows/ci.yml
+└── LICENSE
 ```
+
+## Limitations
+
+- **The data is private.** The notebook cannot be rerun without an export that uses the same schema.
+- **Most of the hyperparameter search failed.** The grid includes `max_features='auto'`, which scikit-learn 1.3+ rejects. The notebook output shows "35 fits failed out of a total of 50", so only a few candidates were actually evaluated.
+- **Preprocessing ran before the split.** Imputation, encoding, and the correlation, VIF and RFE selection all ran on the full dataset, so test scores may be slightly optimistic. The scaler was correctly fitted on the training split only.
+- **A three-valued target is modelled as regression.** A Promoter / Passive / Detractor classifier reporting F1 and a confusion matrix would be the more natural framing.
+- **Importance shows association, not causation.** Touchpoint ratings are correlated with one another. SHAP and impurity importance describe what the model relies on, not what causes satisfaction.
+- **The saved Random Forest is not the top model.** XGBoost and Gradient Boosting score about 0.007 R² higher.
+
+## Next steps
+
+1. Move imputation, encoding and feature selection into a scikit-learn `Pipeline` that is fitted inside cross-validation.
+2. Recast the problem as 3-class classification (or ordinal regression), report macro-F1, and calibrate the outputs to an aggregate NPS per route or month.
+3. Fix the search grid and tune XGBoost or LightGBM, then save the best model as a versioned artefact with its feature order.
+4. Turn the SHAP results into a driver dashboard: the expected NPS gain from moving each touchpoint's low ratings up by one point.
+5. Validate the drivers over time, for example by checking whether they hold on a later month's data.
+
+## License
+
+Code: [MIT](LICENSE) © 2026 Akshat Banga. The survey data is proprietary and not included.
+
+## Author
+
+**Akshat Banga**, AI Generalist and AI transformation. [GitHub](https://github.com/Akshatb848) · [LinkedIn](https://www.linkedin.com/in/akshat-banga-6574aa170/)

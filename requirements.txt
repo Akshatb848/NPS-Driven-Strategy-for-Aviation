@@ -2,7 +2,7 @@
 # The saved model (best_rf_model.zip) was pickled with scikit-learn 1.6.1 and NumPy 2.x.
 numpy>=2.0
 pandas>=2.0
-scikit-learn>=1.6.1
+scikit-learn==1.6.1   # pinned: best_rf_model.pkl was pickled with this version
 xgboost>=2.0
 shap>=0.44
 statsmodels>=0.14

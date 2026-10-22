@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# Data and caches (datasets are downloaded, never committed)
+data/
+datasets/
+*.csv
+*.zip
+!best_rf_model.zip
+.cache/
+kagglehub/
+.kaggle/
+kaggle.json
+
+# Model artefacts produced by re-running notebooks
+*.pkl
+*.joblib
+*.h5
+*.keras
+
+# Secrets
+.env
+.env.*
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
